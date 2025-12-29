@@ -2,25 +2,34 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase, Database } from "firebase/database";
 
-// Konfigurasi Firebase Anda (Hardcoded)
+// --- TUGAS ANDA: ISI BAGIAN INI ---
+// Salin data ini dari: Project Settings > General > Your Apps > SDK Setup and Configuration (pilih Config)
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAg02Bv92e25xnrc6dxLJf9C5tR6Z20CnY",
-  authDomain: "nanobanana-62b6c.firebaseapp.com",
-  databaseURL: "https://nanobanana-62b6c-default-rtdb.firebaseio.com",
-  projectId: "nanobanana-62b6c",
-  storageBucket: "nanobanana-62b6c.firebasestorage.app",
-  messagingSenderId: "448241154304",
-  appId: "1:448241154304:web:d1ffb7297a83decdb35be5",
-  measurementId: "G-VFX34GNYCL"
+  // GANTI tulisan di bawah dengan API Key dari Firebase Console Anda
+  apiKey: "PASTE_API_KEY_DISINI", 
+  
+  authDomain: "masokkilau.firebaseapp.com",
+  
+  // URL ini sudah saya ambil dari screenshot Anda
+  databaseURL: "https://masokkilau-default-rtdb.asia-southeast1.firebasedatabase.app",
+  
+  projectId: "masokkilau",
+  storageBucket: "masokkilau.firebasestorage.app",
+  
+  // GANTI dua baris ini dengan data dari Console Anda
+  messagingSenderId: "PASTE_SENDER_ID_DISINI",
+  appId: "PASTE_APP_ID_DISINI"
 };
 
-// Initialize Firebase directly
+// --- JANGAN UBAH DI BAWAH INI ---
+
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const isConfigured = true;
 
-// Dummy functions to prevent breaking existing imports if any
+// Fungsi dummy untuk kompatibilitas
 export const saveFirebaseConfig = (configStr: string) => { return true; };
-export const resetFirebaseConfig = () => { console.log("Reset disabled in hardcoded mode"); };
+export const resetFirebaseConfig = () => { console.log("Reset disabled"); };
 
 export { db, isConfigured };

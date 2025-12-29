@@ -30,8 +30,11 @@ const compressImage = async (file: File): Promise<string> => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        // Reduced MAX_DIM and Quality to fit Firebase RTDB limits
-        const MAX_DIM = 600; 
+        
+        // OPTIMISASI KUOTA DATABASE:
+        // Kurangi dimensi maksimal dari 600 ke 500 px
+        const MAX_DIM = 500; 
+        
         if (width > height) {
           if (width > MAX_DIM) {
             height *= MAX_DIM / width;
@@ -50,7 +53,8 @@ const compressImage = async (file: File): Promise<string> => {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+            // Turunkan kualitas JPEG dari 0.6 ke 0.5 agar file lebih kecil & database awet
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
             resolve(dataUrl);
         } else {
             reject(new Error("Canvas context failed"));

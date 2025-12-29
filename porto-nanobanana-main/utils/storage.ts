@@ -62,7 +62,7 @@ export const savePortfolioToCloud = async (items: PortfolioItem[], mode: Portfol
     
     // Check for Permission Denied (common if rules are locked)
     if (error.code === 'PERMISSION_DENIED' || error.message?.includes('permission_denied')) {
-        throw new Error("AKSES DITOLAK: Database dikunci (Rules: read/write false). Hubungi pemilik proyek Firebase.");
+        throw new Error("DATABASE TERKUNCI. Buka Firebase Console > Realtime Database > Tab 'Rules'. Ubah '.read': false dan '.write': false MENJADI true.");
     }
     
     // Check for Payload size issues
