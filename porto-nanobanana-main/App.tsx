@@ -382,9 +382,15 @@ const App: React.FC = () => {
                        <span className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
                        {isCloudConnected ? 'Cloud Linked' : 'Offline Mode'}
                    </div>
-                   <div className="flex lg:hidden items-center gap-2 text-[10px] font-bold">
-                       <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                       {onlineUsers} ON
+                   {/* MOBILE ONLINE INDICATOR + PDF BUTTON */}
+                   <div className="flex lg:hidden items-center gap-2">
+                       <button onClick={handleExportPDF} disabled={isExportingPDF} className={`text-[10px] font-bold text-white px-2 py-0.5 border border-black flex items-center gap-1 ${isExportingPDF ? 'bg-slate-400 cursor-wait' : 'bg-purple-600'}`}>
+                         📄 PDF
+                       </button>
+                       <div className="flex items-center gap-1 text-[10px] font-bold">
+                           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                           {onlineUsers} ON
+                       </div>
                    </div>
                </div>
            </div>
@@ -397,10 +403,6 @@ const App: React.FC = () => {
                </div>
 
                <div className="flex items-center gap-2 bg-slate-100 p-1.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                  <button onClick={handleExportPDF} disabled={isExportingPDF} className={`text-[10px] font-bold text-white px-2 py-1.5 border border-black hover:bg-purple-600 transition-all flex items-center gap-1 mr-2 ${isExportingPDF ? 'bg-slate-400 cursor-wait' : 'bg-purple-500'}`}>
-                     📄 PDF
-                  </button>
-
                   {!isLoggedIn ? (
                       <div className="flex items-center gap-2">
                         <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="Pw" className={`w-16 sm:w-24 bg-white border-2 border-black px-2 py-1 text-xs font-bold focus:outline-none focus:ring-2 ${focusRing}`} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
@@ -418,7 +420,11 @@ const App: React.FC = () => {
                </div>
            </div>
 
+          {/* DESKTOP ONLINE INDICATOR + PDF BUTTON */}
           <div className="hidden lg:flex items-center gap-4">
+             <button onClick={handleExportPDF} disabled={isExportingPDF} className={`text-xs font-bold text-white px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-none transition-all flex items-center gap-2 ${isExportingPDF ? 'bg-slate-400 cursor-wait' : 'bg-purple-600'}`}>
+                📄 DOWNLOAD ALL (PROMPTS + IMAGES)
+             </button>
              <div className="flex items-center gap-2 text-xs font-bold border-2 border-black px-3 py-1 bg-slate-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 ONLINE: {onlineUsers}
