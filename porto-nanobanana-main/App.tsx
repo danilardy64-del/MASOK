@@ -30,7 +30,7 @@ const compressImage = async (file: File): Promise<string> => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        // Reduced MAX_DIM and Quality to fit Firebase RTDB limits (Max 10MB per node usually, but safer to keep small)
+        // Reduced MAX_DIM and Quality to fit Firebase RTDB limits
         const MAX_DIM = 600; 
         if (width > height) {
           if (width > MAX_DIM) {
@@ -50,7 +50,6 @@ const compressImage = async (file: File): Promise<string> => {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            // Reduced quality to 0.6 for better storage efficiency
             const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
             resolve(dataUrl);
         } else {
@@ -100,21 +99,35 @@ const App: React.FC = () => {
 
   const bulkInputRef = useRef<HTMLInputElement>(null);
 
+  // Prevent closing tab while syncing
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isSyncing || isProcessingBulk) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isSyncing, isProcessingBulk]);
+
   useEffect(() => {
     setIsLoaded(false);
-    setIsCloudConnected(false);
-
+    // Do not reset cloud connection status immediately to avoid flickering UI
+    
     const unsubscribe = subscribeToPortfolio(viewMode, (cloudData) => {
-        if (cloudData && cloudData.length > 0) {
+        if (cloudData && Array.isArray(cloudData) && cloudData.length > 0) {
              setItems(prevItems => {
+                 // Intelligent Merge: Only update slots if they are different/empty to avoid UI jitter
                  return Array.from({ length: TOTAL_SLOTS }, (_, i) => {
-                    const cloudItem = cloudData.find((item: any) => item.id === (i + 1));
+                    const cloudItem = cloudData.find((item: any) => item && item.id === (i + 1));
                     return cloudItem || prevItems[i];
                  });
              });
              setIsCloudConnected(true);
         } else {
-            setIsCloudConnected(false);
+             // If cloud is empty (first run), keep local defaults but mark connected
+             if(cloudData) setIsCloudConnected(true); 
         }
         setIsLoaded(true);
     });
@@ -157,18 +170,18 @@ const App: React.FC = () => {
     if (!handleAuthCheck()) return;
     
     let modeLabel = viewMode.charAt(0).toUpperCase() + viewMode.slice(1);
-    if (window.confirm(`Simpan perubahan ${modeLabel} ke Cloud Firebase?`)) {
+    if (window.confirm(`Simpan perubahan ${modeLabel} ke Cloud Firebase? Pastikan koneksi internet stabil.`)) {
         setIsSyncing(true);
         try {
             await savePortfolioToCloud(items, viewMode);
             setIsCloudConnected(true);
-            alert("✅ BERHASIL! Data tersimpan di Cloud.");
+            alert("✅ BERHASIL! Data tersimpan di Cloud Database.");
         } catch (error: any) {
             console.error(error);
             if (error.message && error.message.includes("PAYLOAD_TOO_LARGE")) {
-                 alert("❌ GAGAL! Ukuran data terlalu besar untuk database. Coba hapus beberapa gambar.");
+                 alert("❌ GAGAL! Total ukuran data terlalu besar. Hapus beberapa gambar lama sebelum menyimpan.");
             } else {
-                 alert("❌ GAGAL! Periksa koneksi internet atau permission database.");
+                 alert("❌ GAGAL! Gagal terhubung ke database. Coba lagi.");
             }
         } finally {
             setIsSyncing(false);
@@ -255,7 +268,7 @@ const App: React.FC = () => {
 
   const handleDeleteAll = () => {
     if (!handleAuthCheck()) return;
-    if (window.confirm("Hapus SEMUA foto di halaman ini?")) {
+    if (window.confirm("Hapus SEMUA foto di halaman ini? Tindakan ini perlu di-save agar permanen.")) {
         setItems(Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
             id: i + 1,
             imageData: null,
