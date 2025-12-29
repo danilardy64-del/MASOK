@@ -30,7 +30,8 @@ const compressImage = async (file: File): Promise<string> => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        const MAX_DIM = 800;
+        // Reduced MAX_DIM and Quality to fit Firebase RTDB limits (Max 10MB per node usually, but safer to keep small)
+        const MAX_DIM = 600; 
         if (width > height) {
           if (width > MAX_DIM) {
             height *= MAX_DIM / width;
@@ -49,7 +50,8 @@ const compressImage = async (file: File): Promise<string> => {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            // Reduced quality to 0.6 for better storage efficiency
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
             resolve(dataUrl);
         } else {
             reject(new Error("Canvas context failed"));
@@ -161,8 +163,13 @@ const App: React.FC = () => {
             await savePortfolioToCloud(items, viewMode);
             setIsCloudConnected(true);
             alert("✅ BERHASIL! Data tersimpan di Cloud.");
-        } catch (error) {
-            alert("❌ GAGAL! Periksa koneksi internet.");
+        } catch (error: any) {
+            console.error(error);
+            if (error.message && error.message.includes("PAYLOAD_TOO_LARGE")) {
+                 alert("❌ GAGAL! Ukuran data terlalu besar untuk database. Coba hapus beberapa gambar.");
+            } else {
+                 alert("❌ GAGAL! Periksa koneksi internet atau permission database.");
+            }
         } finally {
             setIsSyncing(false);
         }
