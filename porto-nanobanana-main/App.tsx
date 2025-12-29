@@ -178,11 +178,8 @@ const App: React.FC = () => {
             alert("✅ BERHASIL! Data tersimpan di Cloud Database.");
         } catch (error: any) {
             console.error(error);
-            if (error.message && error.message.includes("PAYLOAD_TOO_LARGE")) {
-                 alert("❌ GAGAL! Total ukuran data terlalu besar. Hapus beberapa gambar lama sebelum menyimpan.");
-            } else {
-                 alert("❌ GAGAL! Gagal terhubung ke database. Coba lagi.");
-            }
+            // Display the actual error message from storage.ts
+            alert(`❌ GAGAL! ${error.message}`);
         } finally {
             setIsSyncing(false);
         }
