@@ -12,49 +12,51 @@ const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 export const generateStoryFromImage = async (base64Image: string): Promise<StoryResponse> => {
   const ai = getAi();
   
-  // Using gemini-3-flash-preview for general text and analysis tasks.
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            // Ensure we only send the base64 data portion
-            data: base64Image.includes('base64,') ? base64Image.split('base64,')[1] : base64Image,
-          },
-        },
-        { text: "Analyze this image and provide a creative title and a detailed description/prompt that could have generated it. Return the result in structured JSON format." },
-      ],
-    },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: {
-            type: Type.STRING,
-            description: "A short, catchy title for the artwork.",
-          },
-          story: {
-            type: Type.STRING,
-            description: "A detailed prompt or description of the image content.",
-          },
-        },
-        required: ["title", "story"],
-      },
-    },
-  });
-
   try {
+    // Using gemini-3-flash-preview for general text and analysis tasks.
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              // Ensure we only send the base64 data portion
+              data: base64Image.includes('base64,') ? base64Image.split('base64,')[1] : base64Image,
+            },
+          },
+          { text: "Analyze this image and provide a creative title and a detailed description/prompt that could have generated it. Return the result in structured JSON format." },
+        ],
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: {
+              type: Type.STRING,
+              description: "A short, catchy title for the artwork.",
+            },
+            story: {
+              type: Type.STRING,
+              description: "A detailed prompt or description of the image content.",
+            },
+          },
+          required: ["title", "story"],
+        },
+      },
+    });
+
     // Extracting text output from response.text property (not a method).
     const jsonStr = response.text || "{}";
     return JSON.parse(jsonStr.trim());
+
   } catch (e) {
-    console.error("AI Analysis Parse Error:", e);
+    console.warn("AI Analysis unavailable or failed, using fallback data:", e);
+    // FALLBACK: Return default data so the app doesn't crash/alert.
     return {
-      title: "GENERATED ASSET",
-      story: "The image analysis was completed but returned an unexpected format."
+      title: "Gambar Baru",
+      story: "Deskripsi otomatis tidak tersedia. Silakan klik tombol 'Edit' untuk menambahkan deskripsi atau prompt secara manual."
     };
   }
 };

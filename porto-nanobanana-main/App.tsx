@@ -287,6 +287,7 @@ const App: React.FC = () => {
         const compressedBase64 = await compressImage(file);
         
         // Trigger Gemini AI analysis for the uploaded image
+        // Now returns fallback data if API fails, so it won't throw error
         const storyData = await generateStoryFromImage(compressedBase64);
         const storyJson = JSON.stringify(storyData);
         
@@ -300,9 +301,10 @@ const App: React.FC = () => {
              setSelectedItem({ id, imageData: compressedBase64, story: storyJson, isLoading: false, error: null });
         }
     } catch (err) {
-        console.error("AI analysis failed:", err);
-        setItems(prev => prev.map(item => item.id === id ? { ...item, isLoading: false, error: "AI Error" } : item));
-        alert("Gagal memproses gambar atau AI analisis gagal.");
+        // This catch handles image compression errors or unexpected system errors
+        console.error("System error during upload:", err);
+        setItems(prev => prev.map(item => item.id === id ? { ...item, isLoading: false, error: "Upload Failed" } : item));
+        alert("Gagal memproses file gambar. Pastikan format file benar.");
     }
   };
 
