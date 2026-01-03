@@ -2,14 +2,20 @@
 export interface PortfolioItem {
   id: number;
   imageData: string | null; // Base64 string
-  story: string | null;
+  story: string | null; // Will store a JSON string of BilingualStory
   isLoading: boolean;
   error: string | null;
 }
 
 export interface StoryResponse {
-  story: string;
-  title: string;
+  id: {
+    title: string;
+    story: string;
+  };
+  en: {
+    title: string;
+    story: string;
+  };
 }
 
 export interface GeneratorState {
@@ -22,3 +28,4 @@ export interface GeneratorState {
 }
 
 export type PortfolioMode = 'main' | 'couple' | 'product';
+export type AppLanguage = 'id' | 'en';

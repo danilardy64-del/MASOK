@@ -1,14 +1,14 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { jsPDF } from "jspdf";
-import { PortfolioItem, StoryResponse, PortfolioMode } from './types';
+import { PortfolioItem, StoryResponse, PortfolioMode, AppLanguage } from './types';
 import { PortfolioCard } from './components/PortfolioCard';
 import { StoryModal } from './components/StoryModal';
 import { subscribeToPortfolio, savePortfolioToCloud } from './utils/storage';
 import { INITIAL_DATA } from './src/data/initialData';
-import { generateStoryFromImage } from './services/geminiService';
 
-const TOTAL_SLOTS = 50;
+// UPDATED TO 100 SLOTS
+const TOTAL_SLOTS = 100;
 const OWNER_PASSWORD = "@Hilo123";
 
 const EXTERNAL_LINKS = [
@@ -30,11 +30,7 @@ const compressImage = async (file: File): Promise<string> => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        
-        // OPTIMISASI KUOTA DATABASE:
-        // Kurangi dimensi maksimal dari 600 ke 500 px
         const MAX_DIM = 500; 
-        
         if (width > height) {
           if (width > MAX_DIM) {
             height *= MAX_DIM / width;
@@ -53,7 +49,6 @@ const compressImage = async (file: File): Promise<string> => {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            // Turunkan kualitas JPEG dari 0.6 ke 0.5 agar file lebih kecil & database awet
             const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
             resolve(dataUrl);
         } else {
@@ -68,6 +63,7 @@ const compressImage = async (file: File): Promise<string> => {
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<PortfolioMode>('main');
+  const [lang, setLang] = useState<AppLanguage>('id');
 
   const createInitialSlots = () => {
       const empty = Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
@@ -77,7 +73,6 @@ const App: React.FC = () => {
           isLoading: false,
           error: null
       }));
-      
       if (INITIAL_DATA && INITIAL_DATA.length > 0) {
           return empty.map(slot => {
               const staticMatch = INITIAL_DATA.find(d => d.id === slot.id);
@@ -98,12 +93,9 @@ const App: React.FC = () => {
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginUser, setLoginUser] = useState("admin");
   const [loginPass, setLoginPass] = useState("");
-
   const bulkInputRef = useRef<HTMLInputElement>(null);
 
-  // Prevent closing tab while syncing
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isSyncing || isProcessingBulk) {
@@ -117,12 +109,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setIsLoaded(false);
-    // Do not reset cloud connection status immediately to avoid flickering UI
-    
     const unsubscribe = subscribeToPortfolio(viewMode, (cloudData) => {
         if (cloudData && Array.isArray(cloudData) && cloudData.length > 0) {
              setItems(prevItems => {
-                 // Intelligent Merge: Only update slots if they are different/empty to avoid UI jitter
                  return Array.from({ length: TOTAL_SLOTS }, (_, i) => {
                     const cloudItem = cloudData.find((item: any) => item && item.id === (i + 1));
                     return cloudItem || prevItems[i];
@@ -130,12 +119,10 @@ const App: React.FC = () => {
              });
              setIsCloudConnected(true);
         } else {
-             // If cloud is empty (first run), keep local defaults but mark connected
              if(cloudData) setIsCloudConnected(true); 
         }
         setIsLoaded(true);
     });
-
     return () => unsubscribe();
   }, [viewMode]);
 
@@ -151,11 +138,11 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = () => {
-    if (loginUser === "admin" && loginPass === OWNER_PASSWORD) {
+    if (loginPass === OWNER_PASSWORD) {
         setIsLoggedIn(true);
         setLoginPass(""); 
     } else {
-        alert("Password Salah! Akses Ditolak.");
+        alert("Password Salah!");
     }
   };
 
@@ -166,23 +153,19 @@ const App: React.FC = () => {
 
   const handleAuthCheck = (): boolean => {
     if (isLoggedIn) return true;
-    alert("Akses Ditolak. Silakan Login sebagai Admin terlebih dahulu.");
+    alert(lang === 'id' ? "Akses Ditolak. Login Admin diperlukan." : "Access Denied. Admin Login Required.");
     return false;
   };
 
   const handleSaveToCloud = async () => {
     if (!handleAuthCheck()) return;
-    
-    let modeLabel = viewMode.charAt(0).toUpperCase() + viewMode.slice(1);
-    if (window.confirm(`Simpan perubahan ${modeLabel} ke Cloud Firebase? Pastikan koneksi internet stabil.`)) {
+    if (window.confirm(lang === 'id' ? `Simpan ke Cloud Firebase?` : `Save to Firebase Cloud?`)) {
         setIsSyncing(true);
         try {
             await savePortfolioToCloud(items, viewMode);
             setIsCloudConnected(true);
-            alert("✅ BERHASIL! Data tersimpan di Cloud Database.");
+            alert("✅ BERHASIL!");
         } catch (error: any) {
-            console.error(error);
-            // Display the actual error message from storage.ts
             alert(`❌ GAGAL! ${error.message}`);
         } finally {
             setIsSyncing(false);
@@ -204,20 +187,16 @@ const App: React.FC = () => {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(24);
             doc.text("PORTFOLIO DOCUMENT", pageWidth / 2, pageHeight / 3, { align: "center" });
-            doc.setFontSize(30);
-            doc.text(viewMode.toUpperCase() + " MODE", pageWidth / 2, (pageHeight / 3) + 15, { align: "center" });
             doc.setFontSize(12);
-            doc.setFont("helvetica", "normal");
-            doc.text("Generated by Nanobanana Pro - Kilau AI", pageWidth / 2, pageHeight - 20, { align: "center" });
+            doc.text(`Generated by Nanobanana Pro - Language: ${lang.toUpperCase()}`, pageWidth / 2, pageHeight - 20, { align: "center" });
 
-            let hasContent = false;
             items.forEach((item) => {
                 if (item.imageData) {
-                    hasContent = true;
                     doc.addPage();
                     const storyData = getParsedStory(item.story);
-                    const title = storyData?.title || `Slot #${item.id}`;
-                    const prompt = storyData?.story || "No description provided.";
+                    const langData = storyData ? (storyData[lang] || storyData['id'] || storyData) : null;
+                    const title = langData?.title || `Slot #${item.id}`;
+                    const prompt = langData?.story || "No prompt data.";
 
                     try {
                         const imgProps = doc.getImageProperties(item.imageData);
@@ -227,40 +206,20 @@ const App: React.FC = () => {
                             imgHeight = maxImgHeight;
                             imgWidth = (imgProps.width * imgHeight) / imgProps.height;
                         }
-                        const xPos = (pageWidth - imgWidth) / 2;
-                        doc.addImage(item.imageData, 'JPEG', xPos, margin, imgWidth, imgHeight);
-
-                        const textYStart = margin + imgHeight + 15;
-                        doc.setFont("helvetica", "bold");
+                        doc.addImage(item.imageData, 'JPEG', (pageWidth - imgWidth) / 2, margin, imgWidth, imgHeight);
                         doc.setFontSize(16);
-                        doc.text(title, pageWidth / 2, textYStart, { align: "center" });
-
-                        const promptYStart = textYStart + 10;
-                        doc.setFont("courier", "normal");
+                        doc.text(title, pageWidth / 2, margin + imgHeight + 15, { align: "center" });
                         doc.setFontSize(10);
-                        const availableHeight = pageHeight - promptYStart - margin;
-                        const lineHeightMm = 5;
-                        const maxLines = Math.floor(availableHeight / lineHeightMm);
                         let lines = doc.splitTextToSize(prompt, maxImgWidth);
-                        if (lines.length > maxLines) {
-                            lines = lines.slice(0, maxLines - 1);
-                            lines.push("[... Prompt dipotong agar pas di halaman ...]");
-                        }
-                        doc.text(lines, margin, promptYStart);
+                        doc.text(lines, margin, margin + imgHeight + 25);
                     } catch (err) {
-                        doc.text(`Error loading image for Slot ${item.id}`, margin, margin + 20);
+                        doc.text(`Error Slot ${item.id}`, margin, margin + 20);
                     }
                 }
             });
-
-            if (!hasContent) {
-                alert("Tidak ada foto untuk di-export.");
-                setIsExportingPDF(false);
-                return;
-            }
-            doc.save(`Portfolio_${viewMode}_KilauAI.pdf`);
+            doc.save(`Portfolio_${lang}_${viewMode}.pdf`);
         } catch (error) {
-            alert("Gagal membuat PDF.");
+            alert("Gagal PDF.");
         } finally {
             setIsExportingPDF(false);
         }
@@ -269,168 +228,136 @@ const App: React.FC = () => {
 
   const handleDeleteAll = () => {
     if (!handleAuthCheck()) return;
-    if (window.confirm("Hapus SEMUA foto di halaman ini? Tindakan ini perlu di-save agar permanen.")) {
+    if (window.confirm(lang === 'id' ? "Hapus SEMUA foto di halaman ini?" : "Delete ALL photos in this section?")) {
         setItems(Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
-            id: i + 1,
-            imageData: null,
-            story: null,
-            isLoading: false,
-            error: null
+            id: i + 1, imageData: null, story: null, isLoading: false, error: null
         })));
     }
   };
 
   const processSlotUpload = async (id: number, file: File, openModal: boolean = false) => {
-    // Set initial loading state
     setItems(prev => prev.map(item => item.id === id ? { ...item, isLoading: true, error: null } : item));
-    
     try {
         const compressedBase64 = await compressImage(file);
         
-        // Trigger Gemini AI analysis for the uploaded image
-        // Now returns fallback data if API fails, so it won't throw error
-        const storyData = await generateStoryFromImage(compressedBase64);
-        const storyJson = JSON.stringify(storyData);
-        
+        // MANUAL MODE: No AI generation. Use placeholder.
+        const defaultStory: StoryResponse = {
+            id: {
+                title: "Judul Baru",
+                story: "Klik tombol EDIT untuk menambahkan deskripsi..."
+            },
+            en: {
+                title: "New Title",
+                story: "Click EDIT button to add description..."
+            }
+        };
+
+        const storyJson = JSON.stringify(defaultStory);
         setItems(prev => prev.map(item => 
-          item.id === id 
-            ? { ...item, imageData: compressedBase64, story: storyJson, isLoading: false, error: null } 
-            : item
+          item.id === id ? { ...item, imageData: compressedBase64, story: storyJson, isLoading: false } : item
         ));
-        
-        if (openModal) {
-             setSelectedItem({ id, imageData: compressedBase64, story: storyJson, isLoading: false, error: null });
-        }
+        if (openModal) setSelectedItem({ id, imageData: compressedBase64, story: storyJson, isLoading: false, error: null });
     } catch (err) {
-        // This catch handles image compression errors or unexpected system errors
-        console.error("System error during upload:", err);
         setItems(prev => prev.map(item => item.id === id ? { ...item, isLoading: false, error: "Upload Failed" } : item));
-        alert("Gagal memproses file gambar. Pastikan format file benar.");
     }
   };
 
-  const handleUpload = useCallback((id: number, file: File) => {
-    processSlotUpload(id, file, true);
-  }, []);
-
-  const handleBulkClick = () => {
-    if(handleAuthCheck()) bulkInputRef.current?.click();
-  };
-
-  const handleBulkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files) as File[];
-      const emptySlots = items.filter(i => !i.imageData);
-      if (emptySlots.length === 0) {
-        alert("Slot penuh!");
-        return;
-      }
-      setIsProcessingBulk(true);
-      const filesToProcess = files.slice(0, emptySlots.length);
-      for (let i = 0; i < filesToProcess.length; i++) {
-          await processSlotUpload(emptySlots[i].id, filesToProcess[i], false);
-      }
-      setIsProcessingBulk(false);
-      e.target.value = '';
-    }
-  };
+  const handleUpload = useCallback((id: number, file: File) => processSlotUpload(id, file, true), []);
 
   const handleUpdateItem = (id: number, newStoryData: StoryResponse) => {
     const jsonString = JSON.stringify(newStoryData);
     setItems(prev => prev.map(item => item.id === id ? { ...item, story: jsonString } : item));
-    setSelectedItem(prev => prev && prev.id === id ? { ...prev, story: jsonString } : prev);
   };
 
   const handleDeleteItem = (id: number) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, imageData: null, story: null, isLoading: false, error: null } : item));
+    setItems(prev => prev.map(item => item.id === id ? { ...item, imageData: null, story: null } : item));
     setSelectedItem(null);
   };
 
-  const getParsedStory = (jsonString: string | null): StoryResponse | null => {
+  const getParsedStory = (jsonString: string | null): any => {
       if (!jsonString) return null;
       try { return JSON.parse(jsonString); } catch (e) { return null; }
   };
 
-  let themeColor = 'bg-yellow-300';
-  let focusRing = 'focus:ring-yellow-400';
-  if (viewMode === 'couple') {
-      themeColor = 'bg-pink-300';
-      focusRing = 'focus:ring-pink-400';
-  } else if (viewMode === 'product') {
-      themeColor = 'bg-cyan-300';
-      focusRing = 'focus:ring-cyan-400';
-  }
+  const themeColor = viewMode === 'main' ? 'bg-yellow-300' : viewMode === 'couple' ? 'bg-pink-300' : 'bg-cyan-300';
+  
+  // Title changed back to "50+ Prompt..." but slots remain 100
+  const getHeroTitle = () => {
+    if (lang === 'id') {
+      if (viewMode === 'main') return "50+ Prompt Nanobanana Pro";
+      if (viewMode === 'couple') return "50+ Pose Couple";
+      return "50+ Iklan Produk";
+    } else {
+      if (viewMode === 'main') return "50+ Prompt Nanobanana Pro";
+      if (viewMode === 'couple') return "50+ Couple Poses";
+      return "50+ Product Ads";
+    }
+  };
 
   return (
     <div className={`min-h-screen bg-white text-slate-900 font-sans selection:bg-black selection:text-white`}>
-      <div className="fixed inset-0 z-0 opacity-40 pointer-events-none" 
-           style={{ backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
-      </div>
-      
       <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-sm border-b-4 border-black">
         <div className="container mx-auto px-4 py-3 flex flex-col lg:flex-row items-center justify-between gap-4">
+           {/* Logo & Online Status */}
            <div className="flex items-center gap-2 w-full lg:w-auto justify-between lg:justify-start">
                <div className="flex items-center gap-2 cursor-pointer" onClick={() => setViewMode('main')}>
-                   <div className={`w-8 h-8 ${themeColor} border-2 border-black rounded-full flex items-center justify-center`}>
-                       <span className="font-bold text-lg">K</span>
+                   <div className={`w-8 h-8 ${themeColor} border-2 border-black rounded-full flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]`}>
+                       <span className="font-bold text-sm">K</span>
                    </div>
-                   <span className="font-bold text-sm tracking-wider uppercase">KILAU AI PORTOFOLIO</span>
+                   <span className="font-bold text-xs sm:text-sm uppercase tracking-tighter">KILAU AI PORTFOLIO</span>
                </div>
                
-               <div className="flex items-center gap-3">
-                   <div className={`flex items-center gap-1.5 px-2 py-1 border-2 border-black text-[10px] font-bold uppercase transition-colors ${isCloudConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                       <span className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-                       {isCloudConnected ? 'Cloud Linked' : 'Offline Mode'}
-                   </div>
-                   {/* MOBILE ONLINE INDICATOR + PDF BUTTON */}
-                   <div className="flex lg:hidden items-center gap-2">
-                       <button onClick={handleExportPDF} disabled={isExportingPDF} className={`text-[10px] font-bold text-white px-2 py-0.5 border border-black flex items-center gap-1 ${isExportingPDF ? 'bg-slate-400 cursor-wait' : 'bg-purple-600'}`}>
+               <div className="flex items-center gap-2">
+                   {/* MOBILE LANG + PDF */}
+                   <div className="flex lg:hidden items-center gap-1">
+                       <div className="flex border-2 border-black bg-white overflow-hidden text-[10px] font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                           <button onClick={() => setLang('id')} className={`px-2 py-1 ${lang === 'id' ? 'bg-black text-white' : 'bg-white'}`}>ID</button>
+                           <button onClick={() => setLang('en')} className={`px-2 py-1 ${lang === 'en' ? 'bg-black text-white' : 'bg-white'}`}>EN</button>
+                       </div>
+                       <button onClick={handleExportPDF} disabled={isExportingPDF} className="text-[10px] font-bold text-white px-2 py-1 border-2 border-black bg-purple-600 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                          📄 PDF
                        </button>
-                       <div className="flex items-center gap-1 text-[10px] font-bold">
-                           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                           {onlineUsers} ON
-                       </div>
+                   </div>
+                   <div className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 border-2 border-black bg-slate-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                       <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                       {onlineUsers} ON
                    </div>
                </div>
            </div>
 
-           <div className="flex-1 flex justify-center w-full lg:w-auto gap-4">
-               <div className="flex gap-2">
-                   <button onClick={() => setViewMode('main')} className={`px-3 py-1.5 text-[10px] sm:text-xs font-bold uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${viewMode === 'main' ? 'bg-yellow-400 text-black' : 'bg-white'}`}>MAIN</button>
-                   <button onClick={() => setViewMode('couple')} className={`px-3 py-1.5 text-[10px] sm:text-xs font-bold uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${viewMode === 'couple' ? 'bg-pink-400 text-white' : 'bg-white'}`}>COUPLE</button>
-                   <button onClick={() => setViewMode('product')} className={`px-3 py-1.5 text-[10px] sm:text-xs font-bold uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${viewMode === 'product' ? 'bg-cyan-400 text-white' : 'bg-white'}`}>PRODUK</button>
+           {/* Navigation & Login */}
+           <div className="flex items-center gap-3">
+               <div className="flex gap-1">
+                   {['main', 'couple', 'product'].map(m => (
+                       <button key={m} onClick={() => setViewMode(m as any)} className={`px-2 sm:px-3 py-1.5 text-[10px] font-bold uppercase border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all ${viewMode === m ? 'bg-black text-white' : 'bg-white'}`}>
+                           {m}
+                       </button>
+                   ))}
                </div>
 
                <div className="flex items-center gap-2 bg-slate-100 p-1.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   {!isLoggedIn ? (
-                      <div className="flex items-center gap-2">
-                        <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="Pw" className={`w-16 sm:w-24 bg-white border-2 border-black px-2 py-1 text-xs font-bold focus:outline-none focus:ring-2 ${focusRing}`} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
-                        <button onClick={handleLogin} className={`bg-black text-white px-3 py-1.5 text-xs font-bold border-2 border-black hover:${themeColor} hover:text-black transition-colors`}>GO</button>
-                      </div>
+                      <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="Pw" className="w-12 sm:w-16 bg-white border-2 border-black px-2 py-1 text-[10px] focus:outline-none focus:ring-2 focus:ring-yellow-400" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
                   ) : (
-                      <div className="flex items-center gap-2 px-2 py-0.5">
-                          <button onClick={handleDeleteAll} className="text-[10px] font-bold bg-red-600 text-white px-2 py-1 border border-black" title="Reset all">RST</button>
-                          <button onClick={handleSaveToCloud} disabled={isSyncing} className={`text-[10px] font-bold text-white px-2 py-1 border border-black flex items-center gap-1 ${isSyncing ? 'bg-slate-400' : 'bg-blue-500 hover:bg-blue-600'}`}>
-                             {isSyncing ? '...' : '💾 SAVE'}
-                          </button>
-                          <button onClick={handleLogout} className="text-[10px] font-bold text-red-500 ml-1">X</button>
+                      <div className="flex gap-1">
+                        <button onClick={handleDeleteAll} className="text-[10px] font-bold bg-red-500 text-white px-2 py-1 border-2 border-black" title="Reset All">RST</button>
+                        <button onClick={handleSaveToCloud} className="text-[10px] font-bold bg-blue-500 text-white px-2 py-1 border-2 border-black">💾 SAVE</button>
                       </div>
                   )}
                </div>
            </div>
 
-          {/* DESKTOP ONLINE INDICATOR + PDF BUTTON */}
+          {/* DESKTOP LANG + PDF */}
           <div className="hidden lg:flex items-center gap-4">
-             <button onClick={handleExportPDF} disabled={isExportingPDF} className={`text-xs font-bold text-white px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-none transition-all flex items-center gap-2 ${isExportingPDF ? 'bg-slate-400 cursor-wait' : 'bg-purple-600'}`}>
-                📄 DOWNLOAD ALL (PROMPTS + IMAGES)
-             </button>
-             <div className="flex items-center gap-2 text-xs font-bold border-2 border-black px-3 py-1 bg-slate-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                ONLINE: {onlineUsers}
+             <div className="flex border-2 border-black bg-white overflow-hidden text-xs font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                 <button onClick={() => setLang('id')} className={`px-4 py-1.5 transition-colors ${lang === 'id' ? 'bg-black text-white' : 'bg-white hover:bg-slate-100'}`}>INDONESIA</button>
+                 <button onClick={() => setLang('en')} className={`px-4 py-1.5 transition-colors ${lang === 'en' ? 'bg-black text-white' : 'bg-white hover:bg-slate-100'}`}>ENGLISH</button>
              </div>
-             <div className="flex items-center gap-2 text-xs font-bold border-2 border-black px-3 py-1 bg-slate-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                👁 {totalVisits.toLocaleString()}
+             <button onClick={handleExportPDF} disabled={isExportingPDF} className="text-xs font-bold text-white px-4 py-1.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] bg-purple-600 hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all">
+                📄 DOWNLOAD ALL ({lang === 'id' ? 'PROMPT + GAMBAR' : 'PROMPTS + IMAGES'})
+             </button>
+             <div className="text-xs font-bold border-2 border-black px-3 py-1.5 bg-slate-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                 👁 {totalVisits.toLocaleString()}
              </div>
           </div>
         </div>
@@ -440,21 +367,23 @@ const App: React.FC = () => {
         <div className="mb-16 max-w-6xl mx-auto flex flex-col lg:flex-row gap-8 items-start">
             <div className="flex-1 w-full bg-white border-4 border-black p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] text-center">
                 <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter mb-4">
-                    {viewMode === 'main' ? '50 Prompt Poster' : viewMode === 'couple' ? '50 Couple Pose' : '50 Product Ads'}
+                    {getHeroTitle()}
                 </h1>
                 <p className="text-slate-600 font-medium text-lg mb-8 max-w-xl mx-auto">
-                    Koleksi referensi prompt dan desain visual terbaik. Gambar dilindungi hak cipta dan tidak dapat disalin.
+                    {lang === 'id' 
+                      ? 'Koleksi referensi prompt dan desain visual terbaik. Gambar dilindungi hak cipta.' 
+                      : 'Collection of the best prompt references and visual designs. Images are copyrighted.'}
                 </p>
                 <div className="flex justify-center">
-                    <input type="file" ref={bulkInputRef} onChange={handleBulkChange} multiple accept="image/*" className="hidden" />
-                    <button onClick={handleBulkClick} disabled={isProcessingBulk} className={`px-8 py-4 bg-black text-white font-bold uppercase tracking-widest border-2 border-transparent hover:bg-white hover:text-black hover:border-black transition-all shadow-[4px_4px_0px_0px_rgba(150,150,150,1)] ${isProcessingBulk ? 'opacity-50' : ''}`}>
-                      {isProcessingBulk ? 'Processing...' : '+ ADD PHOTOS'}
+                    <input type="file" ref={bulkInputRef} onChange={(e) => {}} multiple accept="image/*" className="hidden" />
+                    <button onClick={() => bulkInputRef.current?.click()} className="px-8 py-4 bg-black text-white font-bold uppercase tracking-widest border-2 border-transparent hover:bg-white hover:text-black hover:border-black transition-all shadow-[4px_4px_0px_0px_rgba(150,150,150,1)]">
+                      {lang === 'id' ? '+ TAMBAH FOTO' : '+ ADD PHOTOS'}
                     </button>
                 </div>
             </div>
 
             <div className={`w-full lg:w-72 ${themeColor} border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]`}>
-                <h3 className="font-black uppercase text-xl mb-4 border-b-2 border-black pb-2">Link Akses</h3>
+                <h3 className="font-black uppercase text-xl mb-4 border-b-2 border-black pb-2">LINKS</h3>
                 <ul className="space-y-3">
                     {EXTERNAL_LINKS.map((link) => (
                         <li key={link.name}>
@@ -470,14 +399,10 @@ const App: React.FC = () => {
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {items.map((item) => (
-            <PortfolioCard key={item.id} item={item} onUpload={handleUpload} onClick={(it) => setSelectedItem(it)} onAuthCheck={handleAuthCheck} />
+            <PortfolioCard key={item.id} item={item} onUpload={handleUpload} onClick={(it) => setSelectedItem(it)} onAuthCheck={handleAuthCheck} language={lang} />
           ))}
         </div>
       </main>
-
-      <footer className="border-t-4 border-black bg-white py-8 mt-12 text-center text-slate-500 text-[10px] font-mono">
-          KILAU AI • PORTFOLIO ENGINE v2.2 • {viewMode.toUpperCase()}
-      </footer>
 
       {selectedItem && (
         <StoryModal 
@@ -487,6 +412,7 @@ const App: React.FC = () => {
           onSave={(newStory) => handleUpdateItem(selectedItem.id, newStory)}
           onDelete={() => handleDeleteItem(selectedItem.id)}
           isAdmin={isLoggedIn}
+          language={lang}
         />
       )}
     </div>

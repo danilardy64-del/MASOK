@@ -1,14 +1,16 @@
+
 import React, { useRef } from 'react';
-import { PortfolioItem } from '../types';
+import { PortfolioItem, AppLanguage } from '../types';
 
 interface PortfolioCardProps {
   item: PortfolioItem;
   onUpload: (id: number, file: File) => void;
   onClick: (item: PortfolioItem) => void;
   onAuthCheck: () => boolean; 
+  language: AppLanguage;
 }
 
-export const PortfolioCard: React.FC<PortfolioCardProps> = ({ item, onUpload, onClick, onAuthCheck }) => {
+export const PortfolioCard: React.FC<PortfolioCardProps> = ({ item, onUpload, onClick, onAuthCheck, language }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,10 +33,10 @@ export const PortfolioCard: React.FC<PortfolioCardProps> = ({ item, onUpload, on
     <div 
       className={`
         relative aspect-[3/4] cursor-pointer transition-all duration-200 group bg-white
-        border-2 border-black
+        border-4 border-black
         ${item.imageData 
-          ? 'shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:-translate-x-1' 
-          : 'border-dashed hover:border-solid hover:bg-yellow-50 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]'}
+          ? 'shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:-translate-x-1' 
+          : 'border-dashed border-slate-300 hover:border-black hover:bg-yellow-50 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]'}
       `}
       onClick={handleClick}
     >
@@ -47,7 +49,7 @@ export const PortfolioCard: React.FC<PortfolioCardProps> = ({ item, onUpload, on
         onClick={(e) => e.stopPropagation()} 
       />
 
-      <div className="absolute top-0 left-0 z-20 bg-black text-white text-xs font-bold px-2 py-1 border-r-2 border-b-2 border-white">
+      <div className="absolute top-0 left-0 z-20 bg-black text-white text-[10px] font-bold px-2 py-1 border-r-2 border-b-2 border-white">
         #{item.id.toString().padStart(2, '0')}
       </div>
 
@@ -57,24 +59,27 @@ export const PortfolioCard: React.FC<PortfolioCardProps> = ({ item, onUpload, on
              <img 
                src={item.imageData} 
                alt={`Slot ${item.id}`} 
-               className="w-full h-full object-cover grayscale-0 group-hover:grayscale transition-all duration-300"
+               className="w-full h-full object-cover transition-all duration-300"
+               draggable="false"
              />
-             <div className="absolute inset-0 bg-[radial-gradient(circle,#000_1px,transparent_1px)] bg-[size:4px_4px] opacity-0 group-hover:opacity-10 transition-opacity pointer-events-none"></div>
+             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
           </div>
           
-          <div className="absolute bottom-0 left-0 right-0 bg-white border-t-2 border-black p-2 transform translate-y-full group-hover:translate-y-0 transition-transform duration-200">
-            <p className="text-black text-xs font-bold uppercase truncate">
-              {item.isLoading ? "PROCESSING..." : "KLIK UNTUK PROMPTNYA"}
+          <div className="absolute bottom-0 left-0 right-0 bg-white border-t-4 border-black p-2 transform translate-y-full group-hover:translate-y-0 transition-transform duration-200 z-30">
+            <p className="text-black text-[10px] font-black uppercase truncate text-center">
+              {item.isLoading 
+                ? (language === 'id' ? "PROSES..." : "PROCESSING...") 
+                : (language === 'id' ? "KLIK UNTUK PROMPT" : "CLICK FOR PROMPT")}
             </p>
           </div>
         </>
       ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center text-black group-hover:text-black transition-colors p-4 text-center">
-          <div className="w-12 h-12 border-2 border-black rounded-full flex items-center justify-center mb-2 bg-yellow-300 group-hover:scale-110 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 group-hover:text-black transition-colors p-4 text-center">
+          <div className="w-12 h-12 border-4 border-slate-200 group-hover:border-black rounded-full flex items-center justify-center mb-2 bg-transparent group-hover:bg-yellow-300 group-hover:scale-110 transition-all shadow-none group-hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
              <span className="text-2xl font-bold">+</span>
           </div>
-          <span className="text-sm font-bold uppercase tracking-wide">Upload</span>
-          <span className="text-[10px] bg-black text-white px-1 mt-1 font-mono">OWNER ONLY</span>
+          <span className="text-xs font-bold uppercase tracking-wide">{language === 'id' ? 'Upload' : 'Upload'}</span>
+          <span className="text-[8px] bg-slate-200 group-hover:bg-black group-hover:text-white px-1 mt-1 font-black transition-colors">OWNER ONLY</span>
         </div>
       )}
     </div>
