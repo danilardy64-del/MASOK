@@ -1,6 +1,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { jsPDF } from "jspdf";
+import JSZip from 'jszip';
 import { PortfolioItem, StoryResponse, PortfolioMode, AppLanguage } from './types';
 import { PortfolioCard } from './components/PortfolioCard';
 import { StoryModal } from './components/StoryModal';
@@ -18,30 +19,6 @@ const EXTERNAL_LINKS = [
   { name: "HIGGSFIELD", url: "https://higgsfield.ai/" },
   { name: "SEAART AGENT", url: "https://www.seaart.ai/agent/d4fekqde878c73ebah70" },
 ];
-
-// --- HELPER: BRUTE FORCE SEARCH FOR IMAGES ---
-const findAllImagesInJSON = (data: any): PortfolioItem[] => {
-    let collectedItems: any[] = [];
-    
-    const traverse = (obj: any) => {
-        if (!obj || typeof obj !== 'object') return;
-
-        if (obj.imageData && typeof obj.imageData === 'string' && obj.imageData.startsWith('data:image')) {
-            collectedItems.push(obj);
-            return;
-        }
-
-        if (Array.isArray(obj)) {
-            obj.forEach(child => traverse(child));
-            return;
-        }
-
-        Object.values(obj).forEach(child => traverse(child));
-    };
-
-    traverse(data);
-    return collectedItems as PortfolioItem[];
-};
 
 const compressImage = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -198,106 +175,58 @@ const App: React.FC = () => {
     }
   };
 
-  // --- ADMIN BACKUP DOWNLOAD ---
-  const handleBackupJSON = () => {
+  // --- DOWNLOAD ALL IMAGES (ZIP) ---
+  const handleDownloadAllImages = async () => {
     if (!handleAuthCheck()) return;
+    setIsProcessingBulk(true);
 
-    const cleanItems = items.map(item => ({
-       id: item.id,
-       imageData: item.imageData,
-       story: item.story
-    }));
+    try {
+        const zip = new JSZip();
+        const folder = zip.folder(`KILAU_${viewMode.toUpperCase()}_IMAGES`);
+        
+        let count = 0;
+        
+        items.forEach((item) => {
+            if (item.imageData) {
+                // imageData format: "data:image/jpeg;base64,..."
+                // Split to get just the base64 part
+                const parts = item.imageData.split(',');
+                if (parts.length === 2) {
+                    const base64Data = parts[1];
+                    const fileName = `Slot_${item.id.toString().padStart(3, '0')}.jpg`;
+                    folder?.file(fileName, base64Data, {base64: true});
+                    count++;
+                }
+            }
+        });
 
-    const dataStr = JSON.stringify(cleanItems, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `BACKUP_${viewMode.toUpperCase()}_${new Date().toISOString().slice(0,19).replace(/:/g, "-")}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+        if (count === 0) {
+            alert("Tidak ada gambar untuk didownload.");
+            setIsProcessingBulk(false);
+            return;
+        }
+
+        const content = await zip.generateAsync({type:"blob"});
+        const url = URL.createObjectURL(content);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `KILAU_PHOTOS_${viewMode.toUpperCase()}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        alert(`✅ Berhasil mengemas ${count} foto ke dalam ZIP!`);
+
+    } catch (error: any) {
+        console.error("ZIP Error:", error);
+        alert("Gagal membuat file ZIP: " + error.message);
+    } finally {
+        setIsProcessingBulk(false);
+    }
   };
 
-  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      setIsSyncing(true); 
-
-      setTimeout(() => {
-          const reader = new FileReader();
-          
-          reader.onerror = () => {
-            alert("ERROR: Browser gagal membaca file ini.");
-            setIsSyncing(false);
-          };
-
-          reader.onload = async (event) => {
-              try {
-                  const jsonString = event.target?.result as string;
-                  if (!jsonString) throw new Error("File kosong");
-
-                  let data;
-                  try {
-                    data = JSON.parse(jsonString);
-                  } catch (parseError) {
-                    throw new Error("Format file BUKAN JSON yang valid.");
-                  }
-
-                  const foundItems = findAllImagesInJSON(data);
-
-                  if (!foundItems || foundItems.length === 0) {
-                      throw new Error(`TIDAK ADA data gambar ditemukan.`);
-                  }
-
-                  const confirmMsg = `Ditemukan ${foundItems.length} data.\nRestore ke halaman '${viewMode.toUpperCase()}' sekarang?`;
-                  
-                  if (window.confirm(confirmMsg)) {
-                      const normalizedItems = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
-                          const targetId = i + 1;
-                          let match = foundItems.find((it: any) => it.id && (Number(it.id) === targetId || it.id === targetId.toString()));
-                          
-                          if (match) {
-                            return {
-                               id: targetId,
-                               imageData: match.imageData || null,
-                               story: match.story || null,
-                               isLoading: false,
-                               error: null
-                            } as PortfolioItem;
-                          }
-                          return {
-                              id: targetId,
-                              imageData: null,
-                              story: null,
-                              isLoading: false,
-                              error: null
-                          };
-                      });
-
-                      setItems(normalizedItems);
-                      await savePortfolioToCloud(normalizedItems, viewMode);
-                      
-                      alert(`✅ SUKSES! Halaman akan dimuat ulang.`);
-                      window.location.reload();
-                  }
-
-              } catch (error: any) {
-                  alert("⚠️ GAGAL IMPORT: " + error.message);
-              } finally {
-                  setIsSyncing(false);
-                  if (importInputRef.current) importInputRef.current.value = ''; 
-              }
-          };
-          
-          reader.readAsText(file);
-      }, 500); 
-  };
-
-  // --- PDF GENERATOR (FIXED TEXT CUT-OFF) ---
+  // --- PDF GENERATOR ---
   const handleExportPDF = () => {
       setIsExportingPDF(true);
       setTimeout(() => {
@@ -318,10 +247,6 @@ const App: React.FC = () => {
             doc.text(`Language: ${lang.toUpperCase()} | Section: ${viewMode.toUpperCase()}`, pageWidth / 2, pageHeight / 3 + 25, { align: "center" });
 
             items.forEach((item) => {
-                // PDF will be generated IF image exists OR if there is a story/prompt.
-                // The user requested prompts to be intact even without images maybe, but usually Portfolio implies images.
-                // Let's allow items with just prompts too if needed, but for now stick to imageData check or story check.
-                // User said "photo in pdf... including prompts". So requires content.
                 const storyData = getParsedStory(item.story);
                 const langData = storyData ? (storyData[lang] || storyData['id'] || storyData) : null;
                 const promptRaw = langData?.story || "";
@@ -399,7 +324,7 @@ const App: React.FC = () => {
       }, 200);
   };
 
-  // --- DELETE LOGIC (Optimistic UI) ---
+  // --- DELETE LOGIC ---
   const handleDeleteItem = async (id: number) => {
     // Note: Confirmation pop-up handled in StoryModal for better UX
     setSelectedItem(null);
@@ -482,6 +407,58 @@ const App: React.FC = () => {
       try { return JSON.parse(jsonString); } catch (e) { return null; }
   };
 
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const jsonStr = event.target?.result as string;
+            const importedData = JSON.parse(jsonStr);
+
+            if (Array.isArray(importedData)) {
+                // Ensure data fits 100 slots structure
+                const newItems = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
+                    const existing = importedData.find((d: any) => d.id === i + 1);
+                    return existing ? existing : {
+                        id: i + 1,
+                        imageData: null,
+                        story: null,
+                        isLoading: false,
+                        error: null
+                    };
+                });
+                
+                setItems(newItems);
+                
+                if (isLoggedIn) {
+                  if (window.confirm("Import Success! Save to Cloud now?")) {
+                      setIsSyncing(true);
+                      try {
+                          await savePortfolioToCloud(newItems, viewMode);
+                          alert("Saved to Cloud!");
+                      } catch (err: any) {
+                          alert("Save failed: " + err.message);
+                      } finally {
+                          setIsSyncing(false);
+                      }
+                  }
+                } else {
+                  alert("Import Success (Local Only)");
+                }
+            } else {
+                alert("Invalid JSON format");
+            }
+        } catch (err) {
+            console.error("Import Error:", err);
+            alert("Failed to parse JSON");
+        }
+    };
+    reader.readAsText(file);
+    if (importInputRef.current) importInputRef.current.value = "";
+  };
+
   const themeColor = viewMode === 'main' ? 'bg-yellow-300' : viewMode === 'couple' ? 'bg-pink-300' : 'bg-cyan-300';
   
   const getHeroTitle = () => {
@@ -555,10 +532,8 @@ const App: React.FC = () => {
                       <div className="flex gap-1">
                         <input type="file" ref={importInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
                         
-                        <button onClick={() => importInputRef.current?.click()} className="text-[10px] font-bold bg-green-600 text-white px-2 py-1 border-2 border-black hover:bg-green-500" title="Import JSON Backup">📂 IMPORT</button>
-                        
-                        {/* BUTTON BACKUP JSON */}
-                        <button onClick={handleBackupJSON} className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 border-2 border-black hover:bg-purple-500" title="Download Backup JSON">⬇ BACKUP JSON</button>
+                        {/* BUTTON DOWNLOAD ALL IMAGES (ZIP) - REPLACES BACKUP JSON */}
+                        <button onClick={handleDownloadAllImages} className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 border-2 border-black hover:bg-purple-500" title="Download All Images as ZIP">⬇ IMAGES ZIP</button>
                         
                         <button onClick={handleSaveToCloud} className="text-[10px] font-bold bg-blue-500 text-white px-2 py-1 border-2 border-black">💾 SAVE</button>
                       </div>
@@ -639,3 +614,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+    
