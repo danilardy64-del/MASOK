@@ -79,6 +79,20 @@ export const StoryModal: React.FC<StoryModalProps> = ({ item, parsedStory, onClo
     setIsEditing(false);
   };
 
+  // Handle Delete Confirmation Locally
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(
+      language === 'id' 
+      ? "⚠️ KONFIRMASI: Apakah Anda yakin ingin menghapus gambar dan prompt ini secara permanen?" 
+      : "⚠️ CONFIRM: Are you sure you want to permanently delete this image and prompt?"
+    );
+    
+    if (confirmed) {
+        onDelete();
+    }
+  };
+
   if (!item) return null;
 
   return (
@@ -183,10 +197,7 @@ export const StoryModal: React.FC<StoryModalProps> = ({ item, parsedStory, onClo
                                     EDIT
                                 </button>
                                 <button 
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDelete();
-                                }} 
+                                onClick={handleDeleteClick} 
                                 className="px-4 py-4 bg-red-500 text-white font-black uppercase border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all hover:bg-red-600"
                                 >
                                 DEL

@@ -297,7 +297,7 @@ const App: React.FC = () => {
       }, 500); 
   };
 
-  // --- PDF GENERATOR ---
+  // --- PDF GENERATOR (FIXED TEXT CUT-OFF) ---
   const handleExportPDF = () => {
       setIsExportingPDF(true);
       setTimeout(() => {
@@ -307,7 +307,8 @@ const App: React.FC = () => {
             const pageHeight = doc.internal.pageSize.getHeight();
             const margin = 20;
             const maxImgWidth = pageWidth - (margin * 2);
-            const maxImgHeight = pageHeight * 0.5; 
+            // Limit image height so text has room, but still allow image to be large
+            const maxImgHeight = pageHeight * 0.45; 
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(24);
@@ -317,26 +318,43 @@ const App: React.FC = () => {
             doc.text(`Language: ${lang.toUpperCase()} | Section: ${viewMode.toUpperCase()}`, pageWidth / 2, pageHeight / 3 + 25, { align: "center" });
 
             items.forEach((item) => {
-                if (item.imageData) {
+                // PDF will be generated IF image exists OR if there is a story/prompt.
+                // The user requested prompts to be intact even without images maybe, but usually Portfolio implies images.
+                // Let's allow items with just prompts too if needed, but for now stick to imageData check or story check.
+                // User said "photo in pdf... including prompts". So requires content.
+                const storyData = getParsedStory(item.story);
+                const langData = storyData ? (storyData[lang] || storyData['id'] || storyData) : null;
+                const promptRaw = langData?.story || "";
+                
+                if (item.imageData || promptRaw.length > 5) {
                     doc.addPage();
-                    const storyData = getParsedStory(item.story);
-                    const langData = storyData ? (storyData[lang] || storyData['id'] || storyData) : null;
+                    
                     const title = langData?.title || `Slot #${item.id}`;
-                    const promptRaw = langData?.story || "";
                     const prompt = promptRaw.replace(/\r\n/g, "\n");
 
+                    let cursorY = margin;
+
                     try {
-                        const imgProps = doc.getImageProperties(item.imageData);
-                        let imgWidth = maxImgWidth;
-                        let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-                        if (imgHeight > maxImgHeight) {
-                            imgHeight = maxImgHeight;
-                            imgWidth = (imgProps.width * imgHeight) / imgProps.height;
+                        // 1. Image (If exists)
+                        if (item.imageData) {
+                            const imgProps = doc.getImageProperties(item.imageData);
+                            let imgWidth = maxImgWidth;
+                            let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+                            if (imgHeight > maxImgHeight) {
+                                imgHeight = maxImgHeight;
+                                imgWidth = (imgProps.width * imgHeight) / imgProps.height;
+                            }
+                            
+                            doc.addImage(item.imageData, 'JPEG', (pageWidth - imgWidth) / 2, cursorY, imgWidth, imgHeight);
+                            cursorY += imgHeight + 15;
+                        } else {
+                            // If no image, just show placeholder text or skip
+                            doc.setFontSize(10);
+                            doc.text("[NO IMAGE]", pageWidth / 2, cursorY + 20, {align: "center"});
+                            cursorY += 40;
                         }
                         
-                        doc.addImage(item.imageData, 'JPEG', (pageWidth - imgWidth) / 2, margin, imgWidth, imgHeight);
-                        
-                        let cursorY = margin + imgHeight + 15;
+                        // 2. Title
                         doc.setFontSize(14);
                         doc.setFont("helvetica", "bold");
                         
@@ -347,6 +365,7 @@ const App: React.FC = () => {
                         doc.text(title, pageWidth / 2, cursorY, { align: "center" });
                         cursorY += 10;
 
+                        // 3. Prompt Body (Improved Pagination)
                         doc.setFontSize(10);
                         doc.setFont("helvetica", "normal");
                         
@@ -354,9 +373,11 @@ const App: React.FC = () => {
                         const lineHeight = 6;
 
                         lines.forEach((line: string) => {
+                            // Check if line fits
                             if (cursorY + lineHeight > pageHeight - margin) {
                                 doc.addPage();
                                 cursorY = margin + 10; 
+                                doc.setFontSize(10); // Reset font on new page
                             }
                             doc.text(line, margin, cursorY);
                             cursorY += lineHeight;
@@ -378,11 +399,9 @@ const App: React.FC = () => {
       }, 200);
   };
 
-  // --- DELETE LOGIC ---
+  // --- DELETE LOGIC (Optimistic UI) ---
   const handleDeleteItem = async (id: number) => {
-    const confirmDelete = window.confirm("⚠️ KONFIRMASI: Hapus gambar ini secara permanen?");
-    if (!confirmDelete) return;
-
+    // Note: Confirmation pop-up handled in StoryModal for better UX
     setSelectedItem(null);
 
     const emptyItem: PortfolioItem = { 
@@ -397,10 +416,8 @@ const App: React.FC = () => {
 
     try {
         await saveItemToCloud(emptyItem, viewMode);
-        // Feedback visual sederhana (opsional karena UI sudah update)
     } catch (e: any) {
         alert("Gagal update database: " + e.message);
-        // Reload untuk memastikan data konsisten
         window.location.reload();
     }
   };
@@ -410,18 +427,23 @@ const App: React.FC = () => {
     try {
         const compressedBase64 = await compressImage(file);
         
-        const defaultStory: StoryResponse = {
-            id: {
-                title: "Judul Baru",
-                story: "Klik tombol EDIT untuk menambahkan deskripsi..."
-            },
-            en: {
-                title: "New Title",
-                story: "Click EDIT button to add description..."
-            }
-        };
+        // Preserve existing prompt if available (from INITIAL_DATA)
+        const currentItem = items.find(i => i.id === id);
+        let storyJson = currentItem?.story;
 
-        const storyJson = JSON.stringify(defaultStory);
+        if (!storyJson) {
+            const defaultStory: StoryResponse = {
+                id: {
+                    title: "Judul Baru",
+                    story: "Klik tombol EDIT untuk menambahkan deskripsi..."
+                },
+                en: {
+                    title: "New Title",
+                    story: "Click EDIT button to add description..."
+                }
+            };
+            storyJson = JSON.stringify(defaultStory);
+        }
         
         const newItem: PortfolioItem = { 
             id, 
@@ -440,7 +462,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpload = useCallback((id: number, file: File) => processSlotUpload(id, file, true), [viewMode]);
+  const handleUpload = useCallback((id: number, file: File) => processSlotUpload(id, file, true), [viewMode, items]);
 
   const handleUpdateItem = (id: number, newStoryData: StoryResponse) => {
     const jsonString = JSON.stringify(newStoryData);
@@ -535,7 +557,7 @@ const App: React.FC = () => {
                         
                         <button onClick={() => importInputRef.current?.click()} className="text-[10px] font-bold bg-green-600 text-white px-2 py-1 border-2 border-black hover:bg-green-500" title="Import JSON Backup">📂 IMPORT</button>
                         
-                        {/* BUTTON BACKUP JSON (PENGGANTI RST) */}
+                        {/* BUTTON BACKUP JSON */}
                         <button onClick={handleBackupJSON} className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 border-2 border-black hover:bg-purple-500" title="Download Backup JSON">⬇ BACKUP JSON</button>
                         
                         <button onClick={handleSaveToCloud} className="text-[10px] font-bold bg-blue-500 text-white px-2 py-1 border-2 border-black">💾 SAVE</button>
