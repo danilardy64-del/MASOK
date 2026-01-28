@@ -35,7 +35,7 @@ export const subscribeToPortfolio = (mode: PortfolioMode, onDataReceived: (items
 };
 
 /**
- * Mengirim data terbaru ke Firebase Cloud.
+ * Mengirim data terbaru ke Firebase Cloud (BULK / SEMUA DATA).
  */
 export const savePortfolioToCloud = async (items: PortfolioItem[], mode: PortfolioMode) => {
   if (!db) {
@@ -47,11 +47,7 @@ export const savePortfolioToCloud = async (items: PortfolioItem[], mode: Portfol
     if (mode === 'couple') path = 'portfolio/couple_slots';
     if (mode === 'product') path = 'portfolio/product_slots';
 
-    // Strategy: Use 'update' to perform a multi-path update.
-    // This is often more robust than 'set' for large lists as it handles the object merge differently.
     const updates: { [key: string]: any } = {};
-    
-    // We update the entire list object at the path
     updates[path] = items;
     
     await update(ref(db), updates);
@@ -59,17 +55,33 @@ export const savePortfolioToCloud = async (items: PortfolioItem[], mode: Portfol
     return true;
   } catch (error: any) {
     console.error("Failed to save to Firebase:", error);
-    
-    // Check for Permission Denied (common if rules are locked)
     if (error.code === 'PERMISSION_DENIED' || error.message?.includes('permission_denied')) {
-        throw new Error("DATABASE TERKUNCI. Buka Firebase Console > Realtime Database > Tab 'Rules'. Ubah '.read': false dan '.write': false MENJADI true.");
+        throw new Error("DATABASE TERKUNCI. Buka Firebase Console > Realtime Database > Tab 'Rules'. Pastikan rules sudah benar.");
     }
-    
-    // Check for Payload size issues
-    if (error.message?.includes("PAYLOAD_TOO_LARGE") || error.code === 'PAYLOAD_TOO_LARGE') {
-        throw new Error("UKURAN DATA TERLALU BESAR: Kurangi jumlah atau kualitas gambar.");
-    }
-
     throw new Error(error.message || "Koneksi ke Database gagal.");
+  }
+};
+
+/**
+ * AUTO-SAVE: Menyimpan SATU item saja ke Cloud.
+ * Dipanggil otomatis saat Upload/Edit/Delete.
+ */
+export const saveItemToCloud = async (item: PortfolioItem, mode: PortfolioMode) => {
+  if (!db) return;
+
+  let basePath = 'portfolio/slots';
+  if (mode === 'couple') basePath = 'portfolio/couple_slots';
+  if (mode === 'product') basePath = 'portfolio/product_slots';
+
+  // Firebase menggunakan index 0-based, sedangkan ID kita 1-based.
+  const index = item.id - 1;
+  const itemPath = `${basePath}/${index}`;
+
+  try {
+    await set(ref(db, itemPath), item);
+    console.log(`Auto-saved Slot #${item.id} to Cloud.`);
+  } catch (error) {
+    console.error("Auto-save failed:", error);
+    alert("GAGAL MENYIMPAN KE CLOUD! Periksa koneksi internet.");
   }
 };

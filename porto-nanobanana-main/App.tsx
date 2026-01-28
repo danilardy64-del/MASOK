@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 import { PortfolioItem, StoryResponse, PortfolioMode, AppLanguage } from './types';
 import { PortfolioCard } from './components/PortfolioCard';
 import { StoryModal } from './components/StoryModal';
-import { subscribeToPortfolio, savePortfolioToCloud } from './utils/storage';
+import { subscribeToPortfolio, savePortfolioToCloud, saveItemToCloud } from './utils/storage';
 import { INITIAL_DATA } from './src/data/initialData';
 
 // UPDATED TO 100 SLOTS
@@ -18,6 +18,30 @@ const EXTERNAL_LINKS = [
   { name: "HIGGSFIELD", url: "https://higgsfield.ai/" },
   { name: "SEAART AGENT", url: "https://www.seaart.ai/agent/d4fekqde878c73ebah70" },
 ];
+
+// --- HELPER: BRUTE FORCE SEARCH FOR IMAGES ---
+const findAllImagesInJSON = (data: any): PortfolioItem[] => {
+    let collectedItems: any[] = [];
+    
+    const traverse = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+
+        if (obj.imageData && typeof obj.imageData === 'string' && obj.imageData.startsWith('data:image')) {
+            collectedItems.push(obj);
+            return;
+        }
+
+        if (Array.isArray(obj)) {
+            obj.forEach(child => traverse(child));
+            return;
+        }
+
+        Object.values(obj).forEach(child => traverse(child));
+    };
+
+    traverse(data);
+    return collectedItems as PortfolioItem[];
+};
 
 const compressImage = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -64,25 +88,7 @@ const compressImage = async (file: File): Promise<string> => {
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<PortfolioMode>('main');
   const [lang, setLang] = useState<AppLanguage>('id');
-
-  const createInitialSlots = () => {
-      const empty = Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
-          id: i + 1,
-          imageData: null,
-          story: null,
-          isLoading: false,
-          error: null
-      }));
-      if (INITIAL_DATA && INITIAL_DATA.length > 0) {
-          return empty.map(slot => {
-              const staticMatch = INITIAL_DATA.find(d => d.id === slot.id);
-              return staticMatch ? staticMatch : slot;
-          });
-      }
-      return empty;
-  };
-
-  const [items, setItems] = useState<PortfolioItem[]>(createInitialSlots);
+  const [items, setItems] = useState<PortfolioItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false); 
   const [isCloudConnected, setIsCloudConnected] = useState(false);
@@ -95,6 +101,27 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginPass, setLoginPass] = useState("");
   const bulkInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize Slots
+  useEffect(() => {
+    const empty = Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
+        id: i + 1,
+        imageData: null,
+        story: null,
+        isLoading: false,
+        error: null
+    }));
+    if (INITIAL_DATA && INITIAL_DATA.length > 0) {
+        const merged = empty.map(slot => {
+            const staticMatch = INITIAL_DATA.find(d => d.id === slot.id);
+            return staticMatch ? staticMatch : slot;
+        });
+        setItems(merged);
+    } else {
+        setItems(empty);
+    }
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -112,10 +139,13 @@ const App: React.FC = () => {
     const unsubscribe = subscribeToPortfolio(viewMode, (cloudData) => {
         if (cloudData && Array.isArray(cloudData) && cloudData.length > 0) {
              setItems(prevItems => {
-                 return Array.from({ length: TOTAL_SLOTS }, (_, i) => {
+                 const newItems = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
                     const cloudItem = cloudData.find((item: any) => item && item.id === (i + 1));
-                    return cloudItem || prevItems[i];
+                    return cloudItem || (prevItems[i] ? prevItems[i] : {
+                        id: i + 1, imageData: null, story: null, isLoading: false, error: null
+                    });
                  });
+                 return newItems;
              });
              setIsCloudConnected(true);
         } else {
@@ -146,11 +176,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setLoginPass("");
-  };
-
   const handleAuthCheck = (): boolean => {
     if (isLoggedIn) return true;
     alert(lang === 'id' ? "Akses Ditolak. Login Admin diperlukan." : "Access Denied. Admin Login Required.");
@@ -159,12 +184,12 @@ const App: React.FC = () => {
 
   const handleSaveToCloud = async () => {
     if (!handleAuthCheck()) return;
-    if (window.confirm(lang === 'id' ? `Simpan ke Cloud Firebase?` : `Save to Firebase Cloud?`)) {
+    if (window.confirm(lang === 'id' ? `Simpan SEMUA data ke Cloud Firebase?` : `Save ALL data to Firebase Cloud?`)) {
         setIsSyncing(true);
         try {
             await savePortfolioToCloud(items, viewMode);
             setIsCloudConnected(true);
-            alert("✅ BERHASIL!");
+            alert("✅ BERHASIL DISIMPAN!");
         } catch (error: any) {
             alert(`❌ GAGAL! ${error.message}`);
         } finally {
@@ -173,6 +198,106 @@ const App: React.FC = () => {
     }
   };
 
+  // --- ADMIN BACKUP DOWNLOAD ---
+  const handleBackupJSON = () => {
+    if (!handleAuthCheck()) return;
+
+    const cleanItems = items.map(item => ({
+       id: item.id,
+       imageData: item.imageData,
+       story: item.story
+    }));
+
+    const dataStr = JSON.stringify(cleanItems, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `BACKUP_${viewMode.toUpperCase()}_${new Date().toISOString().slice(0,19).replace(/:/g, "-")}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsSyncing(true); 
+
+      setTimeout(() => {
+          const reader = new FileReader();
+          
+          reader.onerror = () => {
+            alert("ERROR: Browser gagal membaca file ini.");
+            setIsSyncing(false);
+          };
+
+          reader.onload = async (event) => {
+              try {
+                  const jsonString = event.target?.result as string;
+                  if (!jsonString) throw new Error("File kosong");
+
+                  let data;
+                  try {
+                    data = JSON.parse(jsonString);
+                  } catch (parseError) {
+                    throw new Error("Format file BUKAN JSON yang valid.");
+                  }
+
+                  const foundItems = findAllImagesInJSON(data);
+
+                  if (!foundItems || foundItems.length === 0) {
+                      throw new Error(`TIDAK ADA data gambar ditemukan.`);
+                  }
+
+                  const confirmMsg = `Ditemukan ${foundItems.length} data.\nRestore ke halaman '${viewMode.toUpperCase()}' sekarang?`;
+                  
+                  if (window.confirm(confirmMsg)) {
+                      const normalizedItems = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
+                          const targetId = i + 1;
+                          let match = foundItems.find((it: any) => it.id && (Number(it.id) === targetId || it.id === targetId.toString()));
+                          
+                          if (match) {
+                            return {
+                               id: targetId,
+                               imageData: match.imageData || null,
+                               story: match.story || null,
+                               isLoading: false,
+                               error: null
+                            } as PortfolioItem;
+                          }
+                          return {
+                              id: targetId,
+                              imageData: null,
+                              story: null,
+                              isLoading: false,
+                              error: null
+                          };
+                      });
+
+                      setItems(normalizedItems);
+                      await savePortfolioToCloud(normalizedItems, viewMode);
+                      
+                      alert(`✅ SUKSES! Halaman akan dimuat ulang.`);
+                      window.location.reload();
+                  }
+
+              } catch (error: any) {
+                  alert("⚠️ GAGAL IMPORT: " + error.message);
+              } finally {
+                  setIsSyncing(false);
+                  if (importInputRef.current) importInputRef.current.value = ''; 
+              }
+          };
+          
+          reader.readAsText(file);
+      }, 500); 
+  };
+
+  // --- PDF GENERATOR ---
   const handleExportPDF = () => {
       setIsExportingPDF(true);
       setTimeout(() => {
@@ -182,13 +307,14 @@ const App: React.FC = () => {
             const pageHeight = doc.internal.pageSize.getHeight();
             const margin = 20;
             const maxImgWidth = pageWidth - (margin * 2);
-            const maxImgHeight = pageHeight * 0.55; 
+            const maxImgHeight = pageHeight * 0.5; 
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(24);
             doc.text("PORTFOLIO DOCUMENT", pageWidth / 2, pageHeight / 3, { align: "center" });
             doc.setFontSize(12);
-            doc.text(`Generated by Nanobanana Pro - Language: ${lang.toUpperCase()}`, pageWidth / 2, pageHeight - 20, { align: "center" });
+            doc.text(`Generated by Nanobanana Pro`, pageWidth / 2, pageHeight / 3 + 15, { align: "center" });
+            doc.text(`Language: ${lang.toUpperCase()} | Section: ${viewMode.toUpperCase()}`, pageWidth / 2, pageHeight / 3 + 25, { align: "center" });
 
             items.forEach((item) => {
                 if (item.imageData) {
@@ -196,7 +322,8 @@ const App: React.FC = () => {
                     const storyData = getParsedStory(item.story);
                     const langData = storyData ? (storyData[lang] || storyData['id'] || storyData) : null;
                     const title = langData?.title || `Slot #${item.id}`;
-                    const prompt = langData?.story || "No prompt data.";
+                    const promptRaw = langData?.story || "";
+                    const prompt = promptRaw.replace(/\r\n/g, "\n");
 
                     try {
                         const imgProps = doc.getImageProperties(item.imageData);
@@ -206,32 +333,75 @@ const App: React.FC = () => {
                             imgHeight = maxImgHeight;
                             imgWidth = (imgProps.width * imgHeight) / imgProps.height;
                         }
+                        
                         doc.addImage(item.imageData, 'JPEG', (pageWidth - imgWidth) / 2, margin, imgWidth, imgHeight);
-                        doc.setFontSize(16);
-                        doc.text(title, pageWidth / 2, margin + imgHeight + 15, { align: "center" });
+                        
+                        let cursorY = margin + imgHeight + 15;
+                        doc.setFontSize(14);
+                        doc.setFont("helvetica", "bold");
+                        
+                        if (cursorY + 10 > pageHeight - margin) {
+                            doc.addPage();
+                            cursorY = margin;
+                        }
+                        doc.text(title, pageWidth / 2, cursorY, { align: "center" });
+                        cursorY += 10;
+
                         doc.setFontSize(10);
-                        let lines = doc.splitTextToSize(prompt, maxImgWidth);
-                        doc.text(lines, margin, margin + imgHeight + 25);
+                        doc.setFont("helvetica", "normal");
+                        
+                        const lines = doc.splitTextToSize(prompt, maxImgWidth);
+                        const lineHeight = 6;
+
+                        lines.forEach((line: string) => {
+                            if (cursorY + lineHeight > pageHeight - margin) {
+                                doc.addPage();
+                                cursorY = margin + 10; 
+                            }
+                            doc.text(line, margin, cursorY);
+                            cursorY += lineHeight;
+                        });
+
                     } catch (err) {
-                        doc.text(`Error Slot ${item.id}`, margin, margin + 20);
+                        console.error("PDF Error", err);
+                        doc.text(`Error exporting slot ${item.id}`, margin, margin + 20);
                     }
                 }
             });
             doc.save(`Portfolio_${lang}_${viewMode}.pdf`);
         } catch (error) {
-            alert("Gagal PDF.");
+            console.error(error);
+            alert("Gagal membuat PDF. Cek console.");
         } finally {
             setIsExportingPDF(false);
         }
-      }, 100);
+      }, 200);
   };
 
-  const handleDeleteAll = () => {
-    if (!handleAuthCheck()) return;
-    if (window.confirm(lang === 'id' ? "Hapus SEMUA foto di halaman ini?" : "Delete ALL photos in this section?")) {
-        setItems(Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
-            id: i + 1, imageData: null, story: null, isLoading: false, error: null
-        })));
+  // --- DELETE LOGIC ---
+  const handleDeleteItem = async (id: number) => {
+    const confirmDelete = window.confirm("⚠️ KONFIRMASI: Hapus gambar ini secara permanen?");
+    if (!confirmDelete) return;
+
+    setSelectedItem(null);
+
+    const emptyItem: PortfolioItem = { 
+        id: id, 
+        imageData: null, 
+        story: null, 
+        isLoading: false, 
+        error: null 
+    };
+
+    setItems(prev => prev.map(item => item.id === id ? emptyItem : item));
+
+    try {
+        await saveItemToCloud(emptyItem, viewMode);
+        // Feedback visual sederhana (opsional karena UI sudah update)
+    } catch (e: any) {
+        alert("Gagal update database: " + e.message);
+        // Reload untuk memastikan data konsisten
+        window.location.reload();
     }
   };
 
@@ -240,7 +410,6 @@ const App: React.FC = () => {
     try {
         const compressedBase64 = await compressImage(file);
         
-        // MANUAL MODE: No AI generation. Use placeholder.
         const defaultStory: StoryResponse = {
             id: {
                 title: "Judul Baru",
@@ -253,25 +422,37 @@ const App: React.FC = () => {
         };
 
         const storyJson = JSON.stringify(defaultStory);
-        setItems(prev => prev.map(item => 
-          item.id === id ? { ...item, imageData: compressedBase64, story: storyJson, isLoading: false } : item
-        ));
-        if (openModal) setSelectedItem({ id, imageData: compressedBase64, story: storyJson, isLoading: false, error: null });
+        
+        const newItem: PortfolioItem = { 
+            id, 
+            imageData: compressedBase64, 
+            story: storyJson, 
+            isLoading: false,
+            error: null 
+        };
+
+        setItems(prev => prev.map(item => item.id === id ? newItem : item));
+        saveItemToCloud(newItem, viewMode);
+
+        if (openModal) setSelectedItem(newItem);
     } catch (err) {
         setItems(prev => prev.map(item => item.id === id ? { ...item, isLoading: false, error: "Upload Failed" } : item));
     }
   };
 
-  const handleUpload = useCallback((id: number, file: File) => processSlotUpload(id, file, true), []);
+  const handleUpload = useCallback((id: number, file: File) => processSlotUpload(id, file, true), [viewMode]);
 
   const handleUpdateItem = (id: number, newStoryData: StoryResponse) => {
     const jsonString = JSON.stringify(newStoryData);
-    setItems(prev => prev.map(item => item.id === id ? { ...item, story: jsonString } : item));
-  };
-
-  const handleDeleteItem = (id: number) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, imageData: null, story: null } : item));
-    setSelectedItem(null);
+    let updatedItem: PortfolioItem | null = null;
+    setItems(prev => prev.map(item => {
+        if (item.id === id) {
+            updatedItem = { ...item, story: jsonString };
+            return updatedItem;
+        }
+        return item;
+    }));
+    if (updatedItem) saveItemToCloud(updatedItem, viewMode);
   };
 
   const getParsedStory = (jsonString: string | null): any => {
@@ -281,7 +462,6 @@ const App: React.FC = () => {
 
   const themeColor = viewMode === 'main' ? 'bg-yellow-300' : viewMode === 'couple' ? 'bg-pink-300' : 'bg-cyan-300';
   
-  // Title changed back to "50+ Prompt..." but slots remain 100
   const getHeroTitle = () => {
     if (lang === 'id') {
       if (viewMode === 'main') return "50+ Prompt Nanobanana Pro";
@@ -296,6 +476,17 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen bg-white text-slate-900 font-sans selection:bg-black selection:text-white`}>
+      {/* GLOBAL LOADING OVERLAY */}
+      {(isSyncing || isProcessingBulk) && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+            <div className="bg-white p-8 border-4 border-black shadow-[16px_16px_0px_0px_#FFFF00] flex flex-col items-center max-w-sm text-center">
+                <div className="w-16 h-16 border-8 border-slate-200 border-t-black rounded-full animate-spin mb-6"></div>
+                <h3 className="text-2xl font-black uppercase mb-2">MEMPROSES DATA</h3>
+                <p className="font-medium text-slate-600">Mohon tunggu sebentar...</p>
+            </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-sm border-b-4 border-black">
         <div className="container mx-auto px-4 py-3 flex flex-col lg:flex-row items-center justify-between gap-4">
            {/* Logo & Online Status */}
@@ -340,7 +531,13 @@ const App: React.FC = () => {
                       <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="Pw" className="w-12 sm:w-16 bg-white border-2 border-black px-2 py-1 text-[10px] focus:outline-none focus:ring-2 focus:ring-yellow-400" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
                   ) : (
                       <div className="flex gap-1">
-                        <button onClick={handleDeleteAll} className="text-[10px] font-bold bg-red-500 text-white px-2 py-1 border-2 border-black" title="Reset All">RST</button>
+                        <input type="file" ref={importInputRef} onChange={handleImportJSON} accept=".json" className="hidden" />
+                        
+                        <button onClick={() => importInputRef.current?.click()} className="text-[10px] font-bold bg-green-600 text-white px-2 py-1 border-2 border-black hover:bg-green-500" title="Import JSON Backup">📂 IMPORT</button>
+                        
+                        {/* BUTTON BACKUP JSON (PENGGANTI RST) */}
+                        <button onClick={handleBackupJSON} className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 border-2 border-black hover:bg-purple-500" title="Download Backup JSON">⬇ BACKUP JSON</button>
+                        
                         <button onClick={handleSaveToCloud} className="text-[10px] font-bold bg-blue-500 text-white px-2 py-1 border-2 border-black">💾 SAVE</button>
                       </div>
                   )}
@@ -354,7 +551,7 @@ const App: React.FC = () => {
                  <button onClick={() => setLang('en')} className={`px-4 py-1.5 transition-colors ${lang === 'en' ? 'bg-black text-white' : 'bg-white hover:bg-slate-100'}`}>ENGLISH</button>
              </div>
              <button onClick={handleExportPDF} disabled={isExportingPDF} className="text-xs font-bold text-white px-4 py-1.5 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] bg-purple-600 hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all">
-                📄 DOWNLOAD ALL ({lang === 'id' ? 'PROMPT + GAMBAR' : 'PROMPTS + IMAGES'})
+                📄 DOWNLOAD ALL
              </button>
              <div className="text-xs font-bold border-2 border-black px-3 py-1.5 bg-slate-50 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                  👁 {totalVisits.toLocaleString()}

@@ -66,8 +66,6 @@ export const StoryModal: React.FC<StoryModalProps> = ({ item, parsedStory, onClo
     const newStoryData: StoryResponse = {
         id: parsedStory?.id || { title: "Tanpa Judul", story: "" },
         en: parsedStory?.en || { title: "Untitled", story: "" },
-        // If legacy data exists, we might overwrite it or try to preserve. 
-        // For simplicity, we ensure id/en structure.
     };
 
     // Update the currently selected language
@@ -185,7 +183,10 @@ export const StoryModal: React.FC<StoryModalProps> = ({ item, parsedStory, onClo
                                     EDIT
                                 </button>
                                 <button 
-                                onClick={() => { if(window.confirm("Hapus slot ini?")) onDelete(); }} 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete();
+                                }} 
                                 className="px-4 py-4 bg-red-500 text-white font-black uppercase border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all hover:bg-red-600"
                                 >
                                 DEL
